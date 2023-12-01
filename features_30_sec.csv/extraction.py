@@ -10,6 +10,7 @@ for file in filenames:
 
 # Extract genre labels and frequencies
 genres = list(c.keys())
+#abcd
 frequencies = list(c.values())
 
 # Create a bar plot (histogram)
