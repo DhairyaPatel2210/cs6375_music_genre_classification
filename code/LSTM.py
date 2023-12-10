@@ -1,46 +1,10 @@
-##### Imports #####
-from tqdm import tqdm
 import numpy as np
-
-##### Data #####
-data = """To be, or not to be, that is the question: Whether \
-'tis nobler in the mind to suffer The slings and arrows of ou\
-trageous fortune, Or to take arms against a sea of troubles A\
-nd by opposing end them. To die—to sleep, No more; and by a s\
-leep to say we end The heart-ache and the thousand natural sh\
-ocks That flesh is heir to: 'tis a consummation Devoutly to b\
-e wish'd. To die, to sleep; To sleep, perchance to dream—ay, \
-there's the rub: For in that sleep of death what dreams may c\
-ome, When we have shuffled off this mortal coil, Must give us\
- pause—there's the respect That makes calamity of so long lif\
-e. For who would bear the whips and scorns of time, Th'oppres\
-sor's wrong, the proud man's contumely, The pangs of dispriz'\
-d love, the law's delay, The insolence of office, and the spu\
-rns That patient merit of th'unworthy takes, When he himself \
-might his quietus make""".lower()
-
-chars = set(data)
-
-data_size, char_size = len(data), len(chars)
-
-print(f'Data size: {data_size}, Char Size: {char_size}')
-
-char_to_idx = {c:i for i, c in enumerate(chars)}
-idx_to_char = {i:c for i, c in enumerate(chars)}
-
-train_X, train_y = data[:-1], data[1:]
-
-##### Helper Functions #####
-def oneHotEncode(text):
-    output = np.zeros((char_size, 1))
-    output[char_to_idx[text]] = 1
-
-    return output
+import os
+import librosa
 
 # Xavier Normalized Initialization
 def initWeights(input_size, output_size):
     return np.random.uniform(-1, 1, (output_size, input_size)) * np.sqrt(6 / (input_size + output_size))
-
 
 ##### Activation Functions #####
 def sigmoid(input, derivative = False):
@@ -58,7 +22,6 @@ def tanh(input, derivative = False):
 def softmax(input):
     return np.exp(input) / np.sum(np.exp(input))
 
-##### Long Short-Term Memory Network Class #####
 class LSTM:
     def __init__(self, input_size, hidden_size, output_size, num_epochs, learning_rate):
         # Hyperparameters
@@ -85,8 +48,7 @@ class LSTM:
         # Final Gate
         self.wy = initWeights(hidden_size, output_size)
         self.by = np.zeros((output_size, 1))
-
-    # Reset Network Memory
+    
     def reset(self):
         self.concat_inputs = {}
 
@@ -99,18 +61,18 @@ class LSTM:
         self.forget_gates = {}
         self.input_gates = {}
         self.outputs = {}
-
-
+    
     # Forward Propogation
     def forward(self, inputs):
         self.reset()
 
         outputs = []
         for q in range(len(inputs)):
-            # print("Hidden states",self.hidden_states[q - 1])
-            # print("Input",inputs[q])
-            # break
-            self.concat_inputs[q] = np.concatenate((self.hidden_states[q - 1], inputs[q]))
+            print("hidden states",self.hidden_states[q - 1])
+            print("inputs",inputs[q])
+            print(np.array(inputs[q]).reshape((40,1)).shape)
+            print(self.hidden_states[q-1].shape)
+            self.concat_inputs[q] = np.concatenate((self.hidden_states[q - 1], np.array(inputs[q]).reshape((40,1))))
 
             self.forget_gates[q] = sigmoid(np.dot(self.wf, self.concat_inputs[q]) + self.bf)
             self.input_gates[q] = sigmoid(np.dot(self.wi, self.concat_inputs[q]) + self.bi)
@@ -123,7 +85,7 @@ class LSTM:
             outputs += [np.dot(self.wy, self.hidden_states[q]) + self.by]
 
         return outputs
-    
+
     # Backward Propogation
     def backward(self, errors, inputs):
         d_wf, d_bf = 0, 0
@@ -189,47 +151,66 @@ class LSTM:
         self.bo += d_bo * self.learning_rate
 
         self.wy += d_wy * self.learning_rate
-        self.by += d_by * self.learning_rate      
-
+        self.by += d_by * self.learning_rate
+    
     # Train
     def train(self, inputs, labels):
 
-        for _ in tqdm(range(self.num_epochs)):
+        for _ in range(self.num_epochs):
             predictions = self.forward(inputs)
+            print(predictions)
+            # errors = []
+            # for q in range(len(predictions)):
+            #     errors += [-softmax(predictions[q])]
+            #     errors[-1][q] += 1
 
-            errors = []
-            for q in range(len(predictions)):
-                errors += [-softmax(predictions[q])]
-                errors[-1][char_to_idx[labels[q]]] += 1
-
-            self.backward(errors, self.concat_inputs)
+            # self.backward(errors, self.concat_inputs)
     
     # Test
     def test(self, inputs, labels):
-        accuracy = 0
-        probabilities = self.forward([oneHotEncode(input) for input in inputs])
-
-        output = ''
+        probabilities = self.forward(inputs)
+        counter = 0
         for q in range(len(labels)):
-            prediction = idx_to_char[np.random.choice([*range(char_size)], p = softmax(probabilities[q].reshape(-1)))]
-
-            output += prediction
-
+            prediction = probabilities[q]
             if prediction == labels[q]:
-                accuracy += 1
+                counter += 1
 
-        print(f'Ground Truth:\nt{labels}\n')
-        print(f'Predictions:\nt{"".join(output)}\n')
-        
-        print(f'Accuracy: {round(accuracy * 100 / len(inputs), 2)}%')
+        # print(f'Ground Truth:\nt{labels}\n')
+        # print(f'Predictions:\nt{"".join(output)}\n')
+        print("Correctly classified : ", counter)
+        # print(f'Accuracy: {round(accuracy * 100 / len(inputs), 2)}%')
 
-# Initialize Network
-hidden_size = 25
 
-lstm = LSTM(input_size = char_size + hidden_size, hidden_size = hidden_size, output_size = char_size, num_epochs = 1_000, learning_rate = 0.05)
+# figuring out to get the mfcc features from the audio files
+def process_all_files(parent_folder):
+    for genre_folder in os.listdir(parent_folder)[:2]:
+        genre_path = os.path.join(parent_folder, genre_folder)
 
-##### Training #####
-lstm.train(train_X, train_y)
+        # Check if it's a directory
+        if os.path.isdir(genre_path):
+            print(f"Processing files in {genre_folder} folder:")
 
-##### Testing #####
-lstm.test(train_X, train_y)          
+            for file_name in os.listdir(genre_path):
+                if file_name.endswith('.wav'):
+                    file_path = os.path.join(genre_path, file_name)
+                    print(f"Processing file: {file_name}")
+
+                    try:
+                        # Extract MFCC features for each file
+                        audio, sample_rate = librosa.load(file_path, res_type="kaiser_fast")
+                        mfcc_features = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc = 40)
+                        mfcc_scaled_features = np.mean(mfcc_features.T, axis=0)
+
+                        inputs.append(mfcc_scaled_features)
+                        outputs.append(genre_folder)
+
+                    except:
+                        print(file_path + "is currepted")
+
+
+inputs = []
+outputs= []
+process_all_files("D:\\UTD\\2.Machine Learning(6375)\\cs6375_music_genre_classification\\Data\\Data\\genres_original")
+hidden_size = len(inputs[1])
+lstm = LSTM(input_size = len(inputs[0]), hidden_size = hidden_size, output_size = len(outputs), num_epochs = 2, learning_rate = 0.05)
+lstm.train(inputs,outputs)
